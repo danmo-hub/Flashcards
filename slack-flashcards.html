@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Team Flashcards</title>
+
+<!--
+  ╔══════════════════════════════════════════════════════════╗
+  ║           SLACK TEAM FLASHCARDS — SETUP GUIDE           ║
+  ╠══════════════════════════════════════════════════════════╣
+  ║                                                          ║
+  ║  1. Go to https://api.slack.com/apps → Create New App   ║
+  ║     → From scratch                                       ║
+  ║                                                          ║
+  ║  2. Under "OAuth & Permissions" add these Bot Token      ║
+  ║     Scopes:                                              ║
+  ║       • channels:read                                    ║
+  ║       • users:read                                       ║
+  ║       • users.profile:read                               ║
+  ║                                                          ║
+  ║  3. Add a Redirect URL:                                  ║
+  ║       https://your-domain.com/slack-flashcards.html      ║
+  ║     (or http://localhost:3000 for local dev)             ║
+  ║                                                          ║
+  ║  4. Go to "Basic Information" and copy your:             ║
+  ║       • Client ID                                        ║
+  ║       • Client Secret                                    ║
+  ║                                                          ║
+  ║  5. Paste them into the CONFIG block below               ║
+  ║                                                          ║
+  ║  6. Install the app to your workspace                    ║
+  ║                                                          ║
+  ║  NOTE: Client Secret should NOT be in frontend code in   ║
+  ║  production. Use a small backend proxy for the token     ║
+  ║  exchange step (see PRODUCTION NOTE below).              ║
+  ║                                                          ║
+  ╚══════════════════════════════════════════════════════════╝
+-->
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #242424;
+    --border: rgba(255,255,255,0.08);
+    --border-hover: rgba(255,255,255,0.16);
+    --text: #f0ede8;
+    --text-muted: #888;
+    --text-dim: #555;
+    --accent: #e8d5b0;
+    --accent-dim: rgba(232,213,176,0.12);
+    --green: #4caf7d;
+    --green-dim: rgba(76,175,125,0.12);
+    --red: #e05c5c;
+    --red-dim: rgba(224,92,92,0.12);
+    --radius: 16px;
+    --radius-sm: 10px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 300;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    overflow-x: hidden;
+  }
+
+  /* Subtle grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  #app {
+    width: 100%;
+    max-width: 520px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── SCREENS ── */
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  /* ── AUTH SCREEN ── */
+  #screen-auth { text-align: center; padding: 60px 0; }
+
+  .logo {
+    font-family: 'DM Serif Display', serif;
+    font-size: 42px;
+    color: var(--text);
+    letter-spacing: -1px;
+    margin-bottom: 6px;
+    line-height: 1;
+  }
+  .logo em { color: var(--accent); font-style: italic; }
+
+  .tagline {
+    font-size: 14px;
+    color: var(--text-muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 56px;
+  }
+
+  .slack-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--text);
+    color: #0f0f0f;
+    border: none;
+    padding: 14px 28px;
+    border-radius: 100px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: transform 0.15s, opacity 0.15s;
+    text-decoration: none;
+  }
+  .slack-btn:hover { transform: translateY(-1px); opacity: 0.92; }
+  .slack-btn:active { transform: scale(0.98); }
+
+  .slack-btn svg { flex-shrink: 0; }
+
+  /* ── SETUP NOTICE ── */
+  #setup-notice {
+    margin-top: 40px;
+    padding: 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    text-align: left;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.7;
+  }
+  #setup-notice strong { color: var(--accent); font-weight: 500; }
+  #setup-notice code {
+    background: var(--surface2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--text);
+  }
+
+  /* ── LOADING SCREEN ── */
+  #screen-loading { text-align: center; padding: 80px 0; }
+
+  .spinner {
+    width: 36px;
+    height: 36px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 20px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-label {
+    font-size: 14px;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+  }
+
+  /* ── CHANNEL SCREEN ── */
+  #screen-channels { }
+
+  .screen-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+  }
+  .screen-header h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 26px;
+    letter-spacing: -0.5px;
+  }
+
+  .user-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    padding: 6px 12px 6px 6px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .user-pill img, .user-pill .avatar-initials {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+  .avatar-initials {
+    background: var(--accent-dim);
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 500;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .search-box {
+    position: relative;
+    margin-bottom: 16px;
+  }
+  .search-box input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 300;
+    padding: 12px 16px 12px 40px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .search-box input:focus { border-color: var(--border-hover); }
+  .search-box input::placeholder { color: var(--text-dim); }
+  .search-icon {
+    position: absolute;
+    left: 14px; top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    font-size: 15px;
+  }
+
+  .channel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 400px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  .channel-list::-webkit-scrollbar { width: 4px; }
+  .channel-list::-webkit-scrollbar-track { background: transparent; }
+  .channel-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .channel-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .channel-item:hover {
+    border-color: var(--border-hover);
+    background: var(--surface2);
+  }
+  .channel-item .ch-name {
+    font-size: 14px;
+    font-weight: 400;
+  }
+  .channel-item .ch-name span { color: var(--text-muted); margin-right: 2px; }
+  .channel-item .ch-count {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px 0;
+    font-size: 14px;
+    color: var(--text-dim);
+  }
+
+  /* ── FLASHCARD SCREEN ── */
+  #screen-flashcard { }
+
+  .fc-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .fc-channel {
+    font-size: 13px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .fc-channel span { color: var(--text-dim); }
+  .fc-counter {
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  .progress-bar {
+    height: 2px;
+    background: var(--border);
+    border-radius: 1px;
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 1px;
+    transition: width 0.4s cubic-bezier(0.4,0,0.2,1);
+  }
+
+  /* Card */
+  .card-scene {
+    width: 100%;
+    aspect-ratio: 1 / 1.1;
+    perspective: 1200px;
+    cursor: pointer;
+    margin-bottom: 20px;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+
+  .card-inner {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    transform-style: preserve-3d;
+    transition: transform 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .card-inner.flipped { transform: rotateY(180deg); }
+
+  .card-face {
+    position: absolute;
+    inset: 0;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  /* Front face — big photo */
+  .card-front .photo-wrap {
+    width: 56%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--surface2);
+    border: 3px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 52px;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-bottom: 24px;
+  }
+  .card-front .photo-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .card-front .tap-hint {
+    font-size: 12px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* Back face — reveal */
+  .card-back { transform: rotateY(180deg); }
+  .card-back .photo-sm {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: var(--text-muted);
+    margin-bottom: 18px;
+  }
+  .card-back .photo-sm img { width: 100%; height: 100%; object-fit: cover; }
+  .card-back .reveal-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: 28px;
+    letter-spacing: -0.5px;
+    text-align: center;
+    margin-bottom: 8px;
+    padding: 0 24px;
+  }
+  .card-back .reveal-title {
+    font-size: 14px;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 0 24px;
+    line-height: 1.5;
+  }
+  .card-back .reveal-dept {
+    font-size: 12px;
+    color: var(--text-dim);
+    text-align: center;
+    margin-top: 6px;
+    padding: 0 24px;
+  }
+
+  /* Verdict buttons */
+  .verdict-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .verdict-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .verdict-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .verdict-btn.wrong:not(:disabled):hover {
+    background: var(--red-dim);
+    border-color: var(--red);
+    color: var(--red);
+  }
+  .verdict-btn.correct:not(:disabled):hover {
+    background: var(--green-dim);
+    border-color: var(--green);
+    color: var(--green);
+  }
+
+  .flip-nudge {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+    letter-spacing: 0.04em;
+    transition: opacity 0.2s;
+  }
+
+  /* ── RESULTS SCREEN ── */
+  #screen-results { text-align: center; padding: 20px 0; }
+
+  .results-heading {
+    font-family: 'DM Serif Display', serif;
+    font-size: 36px;
+    letter-spacing: -1px;
+    margin-bottom: 6px;
+  }
+  .results-subhead {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 40px;
+  }
+
+  .score-ring-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 36px;
+  }
+  .score-ring-wrap svg { overflow: visible; }
+
+  .metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 32px;
+  }
+  .metric {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px 12px;
+  }
+  .metric .val {
+    font-family: 'DM Serif Display', serif;
+    font-size: 28px;
+    letter-spacing: -0.5px;
+    margin-bottom: 2px;
+  }
+  .metric .lbl { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+  .metric.m-correct .val { color: var(--green); }
+  .metric.m-wrong .val { color: var(--red); }
+
+  .results-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .btn-primary {
+    width: 100%;
+    padding: 14px;
+    background: var(--accent);
+    color: #0f0f0f;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.15s;
+  }
+  .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+  .btn-secondary {
+    width: 100%;
+    padding: 14px;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 300;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .btn-secondary:hover { border-color: var(--border-hover); color: var(--text); }
+
+  .error-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #2a1a1a;
+    border: 1px solid var(--red);
+    color: var(--red);
+    padding: 12px 20px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    z-index: 100;
+    max-width: 420px;
+    text-align: center;
+    display: none;
+  }
+  .error-toast.show { display: block; animation: fadeUp 0.2s ease; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- AUTH -->
+  <div id="screen-auth" class="screen active">
+    <div class="logo">Team<em>Cards</em></div>
+    <p class="tagline">Learn your colleagues by face</p>
+    <button class="slack-btn" onclick="startOAuth()">
+      <svg width="20" height="20" viewBox="0 0 54 54" fill="none">
+        <path d="M19.7 33.5a4.4 4.4 0 0 1-4.4 4.4 4.4 4.4 0 0 1-4.4-4.4 4.4 4.4 0 0 1 4.4-4.4h4.4v4.4z" fill="#E01E5A"/>
+        <path d="M22 33.5a4.4 4.4 0 0 1 4.4-4.4 4.4 4.4 0 0 1 4.4 4.4v11a4.4 4.4 0 0 1-4.4 4.4 4.4 4.4 0 0 1-4.4-4.4v-11z" fill="#E01E5A"/>
+        <path d="M26.4 19.7a4.4 4.4 0 0 1-4.4-4.4 4.4 4.4 0 0 1 4.4-4.4 4.4 4.4 0 0 1 4.4 4.4v4.4h-4.4z" fill="#36C5F0"/>
+        <path d="M26.4 22a4.4 4.4 0 0 1 4.4 4.4 4.4 4.4 0 0 1-4.4 4.4H15.4a4.4 4.4 0 0 1-4.4-4.4 4.4 4.4 0 0 1 4.4-4.4h11z" fill="#36C5F0"/>
+        <path d="M40.2 26.4a4.4 4.4 0 0 1 4.4 4.4 4.4 4.4 0 0 1-4.4 4.4 4.4 4.4 0 0 1-4.4-4.4v-4.4h4.4z" fill="#2EB67D"/>
+        <path d="M37.9 26.4a4.4 4.4 0 0 1-4.4-4.4 4.4 4.4 0 0 1 4.4-4.4h11a4.4 4.4 0 0 1 4.4 4.4 4.4 4.4 0 0 1-4.4 4.4h-11z" fill="#2EB67D"/>
+        <path d="M33.5 40.2a4.4 4.4 0 0 1 4.4 4.4 4.4 4.4 0 0 1-4.4 4.4 4.4 4.4 0 0 1-4.4-4.4V35.8h4.4z" fill="#ECB22E"/>
+        <path d="M33.5 37.9a4.4 4.4 0 0 1-4.4-4.4 4.4 4.4 0 0 1 4.4-4.4 4.4 4.4 0 0 1 4.4 4.4v11a4.4 4.4 0 0 1-4.4 4.4 4.4 4.4 0 0 1-4.4-4.4v-11z" fill="#ECB22E"/>
+      </svg>
+      Sign in with Slack
+    </button>
+
+    <div id="setup-notice">
+      <strong>⚙ Setup required</strong><br><br>
+      Before use, open this file and fill in the <code>CONFIG</code> block at the top of the script:<br><br>
+      • <code>CLIENT_ID</code> — from your Slack App's Basic Information<br>
+      • <code>CLIENT_SECRET</code> — same page (use a backend proxy in production)<br>
+      • <code>REDIRECT_URI</code> — the URL where this file is hosted<br><br>
+      Required OAuth scopes: <code>channels:read</code>, <code>users:read</code>, <code>users.profile:read</code>
+    </div>
+  </div>
+
+  <!-- LOADING -->
+  <div id="screen-loading" class="screen">
+    <div class="spinner"></div>
+    <p class="loading-label" id="loading-text">Loading…</p>
+  </div>
+
+  <!-- CHANNELS -->
+  <div id="screen-channels" class="screen">
+    <div class="screen-header">
+      <h1>Pick a channel</h1>
+      <div class="user-pill" id="user-pill">
+        <div class="avatar-initials" id="user-avatar">?</div>
+        <span id="user-name">…</span>
+      </div>
+    </div>
+    <div class="search-box">
+      <span class="search-icon">⌕</span>
+      <input type="text" id="channel-search" placeholder="Search channels…" oninput="filterChannels()" autocomplete="off" />
+    </div>
+    <div class="channel-list" id="channel-list"></div>
+  </div>
+
+  <!-- FLASHCARD -->
+  <div id="screen-flashcard" class="screen">
+    <div class="fc-meta">
+      <div class="fc-channel"><span>#</span><span id="fc-channel-name"></span></div>
+      <div class="fc-counter" id="fc-counter">1 / 1</div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+
+    <div class="card-scene" id="card-scene" onclick="flipCard()">
+      <div class="card-inner" id="card-inner">
+        <div class="card-face card-front">
+          <div class="photo-wrap" id="front-photo"></div>
+          <span class="tap-hint">tap to reveal</span>
+        </div>
+        <div class="card-face card-back">
+          <div class="photo-sm" id="back-photo"></div>
+          <div class="reveal-name" id="back-name"></div>
+          <div class="reveal-title" id="back-title"></div>
+          <div class="reveal-dept" id="back-dept"></div>
+        </div>
+      </div>
+    </div>
+
+    <p class="flip-nudge" id="flip-nudge">flip the card first</p>
+    <div class="verdict-row">
+      <button class="verdict-btn wrong" id="btn-wrong" onclick="verdict(false)" disabled>✗ &nbsp;Missed it</button>
+      <button class="verdict-btn correct" id="btn-correct" onclick="verdict(true)" disabled>✓ &nbsp;Got it!</button>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div id="screen-results" class="screen">
+    <div class="results-heading" id="results-heading">Nice work!</div>
+    <div class="results-subhead" id="results-subhead"></div>
+    <div class="score-ring-wrap">
+      <svg width="140" height="140" viewBox="0 0 140 140" id="score-ring-svg" aria-label="Score">
+        <circle cx="70" cy="70" r="56" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="12"/>
+        <circle cx="70" cy="70" r="56" fill="none" id="score-arc"
+          stroke="#e8d5b0" stroke-width="12" stroke-linecap="round"
+          stroke-dasharray="0 352" stroke-dashoffset="88"
+          style="transition: stroke-dasharray 1s cubic-bezier(0.4,0,0.2,1); transition-delay: 0.1s;"/>
+        <text x="70" y="65" text-anchor="middle" font-family="DM Serif Display, serif" font-size="32" fill="#f0ede8" id="score-pct-text">0%</text>
+        <text x="70" y="84" text-anchor="middle" font-family="DM Sans, sans-serif" font-size="12" fill="#555" id="score-label-text">score</text>
+      </svg>
+    </div>
+    <div class="metrics">
+      <div class="metric m-correct"><div class="val" id="res-correct">0</div><div class="lbl">Correct</div></div>
+      <div class="metric m-wrong"><div class="val" id="res-wrong">0</div><div class="lbl">Missed</div></div>
+      <div class="metric"><div class="val" id="res-total">0</div><div class="lbl">Total</div></div>
+    </div>
+    <div class="results-actions">
+      <button class="btn-primary" id="btn-retry-wrong" onclick="retryMissed()" style="display:none">Retry missed cards</button>
+      <button class="btn-secondary" onclick="restartSameChannel()">Play again ↺</button>
+      <button class="btn-secondary" onclick="showScreen('screen-channels')">Choose another channel</button>
+      <button class="btn-secondary" onclick="signOut()">Sign out</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="error-toast" id="error-toast"></div>
+
+<script>
+/* ══════════════════════════════════════
+   CONFIG — fill these in before deploying
+   ══════════════════════════════════════ */
+const CONFIG = {
+  CLIENT_ID:     'YOUR_SLACK_CLIENT_ID',
+  CLIENT_SECRET: 'YOUR_SLACK_CLIENT_SECRET',  // ⚠ move to backend in production
+  REDIRECT_URI:  window.location.href.split('?')[0].split('#')[0],
+  SCOPES:        'channels:read users:read users.profile:read',
+};
+
+/*
+  PRODUCTION NOTE:
+  The token exchange (code → access_token) sends your CLIENT_SECRET.
+  In production, replace the exchangeCodeForToken() function below
+  with a call to your own backend endpoint, e.g.:
+    POST /api/slack/exchange  { code }  → { access_token }
+  Never expose CLIENT_SECRET in public frontend code.
+*/
+
+/* ══════════════════════════════════════
+   STATE
+   ══════════════════════════════════════ */
+let token = localStorage.getItem('sf_token') || null;
+let allChannels = [];
+let currentChannelId = null;
+let currentChannelName = null;
+let allMembers = [];
+let deck = [];
+let deckIndex = 0;
+let scores = { correct: 0, wrong: 0 };
+let missedMembers = [];
+let cardFlipped = false;
+
+/* ══════════════════════════════════════
+   INIT
+   ══════════════════════════════════════ */
+(async function init() {
+  // Handle OAuth callback
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const state = params.get('state');
+
+  if (code && state && localStorage.getItem('sf_oauth_state') === state) {
+    localStorage.removeItem('sf_oauth_state');
+    window.history.replaceState({}, '', window.location.pathname);
+    showScreen('screen-loading');
+    setLoadingText('Signing you in…');
+    try {
+      token = await exchangeCodeForToken(code);
+      localStorage.setItem('sf_token', token);
+      await loadChannelScreen();
+    } catch(e) {
+      showError('Sign-in failed: ' + e.message);
+      showScreen('screen-auth');
+    }
+    return;
+  }
+
+  if (token) {
+    showScreen('screen-loading');
+    setLoadingText('Loading channels…');
+    try {
+      await loadChannelScreen();
+    } catch(e) {
+      localStorage.removeItem('sf_token');
+      token = null;
+      showScreen('screen-auth');
+    }
+    return;
+  }
+
+  showScreen('screen-auth');
+})();
+
+/* ══════════════════════════════════════
+   OAUTH
+   ══════════════════════════════════════ */
+function startOAuth() {
+  if (CONFIG.CLIENT_ID === 'YOUR_SLACK_CLIENT_ID') {
+    showError('Please configure CLIENT_ID and CLIENT_SECRET in the CONFIG block first.');
+    return;
+  }
+  const state = Math.random().toString(36).slice(2);
+  localStorage.setItem('sf_oauth_state', state);
+  const url = new URL('https://slack.com/oauth/v2/authorize');
+  url.searchParams.set('client_id', CONFIG.CLIENT_ID);
+  url.searchParams.set('scope', '');
+  url.searchParams.set('user_scope', CONFIG.SCOPES);
+  url.searchParams.set('redirect_uri', CONFIG.REDIRECT_URI);
+  url.searchParams.set('state', state);
+  window.location.href = url.toString();
+}
+
+async function exchangeCodeForToken(code) {
+  // Using a CORS proxy approach via Slack's endpoint directly
+  // In production: replace this with a call to your own backend
+  const resp = await fetch('https://slack.com/api/oauth.v2.access', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: CONFIG.CLIENT_ID,
+      client_secret: CONFIG.CLIENT_SECRET,
+      code,
+      redirect_uri: CONFIG.REDIRECT_URI,
+    }),
+  });
+  const data = await resp.json();
+  if (!data.ok) throw new Error(data.error || 'OAuth failed');
+  // User token (authed_user.access_token) for user-scoped APIs
+  return data.authed_user?.access_token || data.access_token;
+}
+
+function signOut() {
+  localStorage.removeItem('sf_token');
+  token = null;
+  allChannels = [];
+  showScreen('screen-auth');
+}
+
+/* ══════════════════════════════════════
+   SLACK API
+   ══════════════════════════════════════ */
+async function slack(method, params = {}) {
+  const url = new URL(`https://slack.com/api/${method}`);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  const resp = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await resp.json();
+  if (!data.ok) throw new Error(data.error || `Slack API error: ${method}`);
+  return data;
+}
+
+async function fetchAllChannels() {
+  let channels = [];
+  let cursor = '';
+  do {
+    const params = { exclude_archived: true, types: 'public_channel', limit: 200 };
+    if (cursor) params.cursor = cursor;
+    const data = await slack('conversations.list', params);
+    channels = channels.concat(data.channels || []);
+    cursor = data.response_metadata?.next_cursor || '';
+  } while (cursor);
+  return channels.sort((a, b) => (b.num_members || 0) - (a.num_members || 0));
+}
+
+async function fetchChannelMembers(channelId) {
+  let userIds = [];
+  let cursor = '';
+  do {
+    const params = { channel: channelId, limit: 200 };
+    if (cursor) params.cursor = cursor;
+    const data = await slack('conversations.members', params);
+    userIds = userIds.concat(data.members || []);
+    cursor = data.response_metadata?.next_cursor || '';
+  } while (cursor);
+  return userIds;
+}
+
+async function fetchUserProfile(userId) {
+  const data = await slack('users.info', { user: userId });
+  const u = data.user;
+  if (u.is_bot || u.deleted || u.id === 'USLACKBOT') return null;
+  const p = u.profile || {};
+  return {
+    id: u.id,
+    name: p.real_name || p.display_name || u.name,
+    title: p.title || '',
+    dept: p.department || '',
+    image: p.image_512 || p.image_192 || p.image_72 || '',
+  };
+}
+
+async function fetchCurrentUser() {
+  const data = await slack('auth.test');
+  return { id: data.user_id, name: data.user };
+}
+
+/* ══════════════════════════════════════
+   CHANNEL SCREEN
+   ══════════════════════════════════════ */
+async function loadChannelScreen() {
+  const [channels, me] = await Promise.all([fetchAllChannels(), fetchCurrentUser()]);
+  allChannels = channels;
+
+  // Populate user pill
+  document.getElementById('user-name').textContent = me.name;
+  try {
+    const profile = await fetchUserProfile(me.id);
+    const av = document.getElementById('user-avatar');
+    if (profile?.image) {
+      av.outerHTML = `<img id="user-avatar" src="${profile.image}" alt="${profile.name}" style="width:24px;height:24px;border-radius:50%;object-fit:cover;">`;
+    } else {
+      av.textContent = me.name.slice(0,2).toUpperCase();
+    }
+  } catch(_) {}
+
+  renderChannels(allChannels);
+  showScreen('screen-channels');
+}
+
+function renderChannels(channels) {
+  const el = document.getElementById('channel-list');
+  if (!channels.length) {
+    el.innerHTML = '<div class="empty-state">No channels found</div>';
+    return;
+  }
+  el.innerHTML = channels.map(c => `
+    <div class="channel-item" onclick="selectChannel('${c.id}','${escHtml(c.name)}')">
+      <span class="ch-name"><span>#</span>${escHtml(c.name)}</span>
+      <span class="ch-count">${c.num_members != null ? c.num_members + ' members' : ''}</span>
+    </div>
+  `).join('');
+}
+
+function filterChannels() {
+  const q = document.getElementById('channel-search').value.toLowerCase();
+  renderChannels(allChannels.filter(c => c.name.includes(q)));
+}
+
+/* ══════════════════════════════════════
+   FLASHCARD GAME
+   ══════════════════════════════════════ */
+async function selectChannel(id, name) {
+  currentChannelId = id;
+  currentChannelName = name;
+  showScreen('screen-loading');
+  setLoadingText(`Fetching members of #${name}…`);
+
+  try {
+    const userIds = await fetchChannelMembers(id);
+    setLoadingText(`Loading ${userIds.length} profiles…`);
+
+    // Fetch profiles in parallel batches of 8
+    const profiles = [];
+    for (let i = 0; i < userIds.length; i += 8) {
+      const batch = userIds.slice(i, i + 8);
+      const results = await Promise.allSettled(batch.map(fetchUserProfile));
+      results.forEach(r => { if (r.status === 'fulfilled' && r.value) profiles.push(r.value); });
+      setLoadingText(`Loaded ${Math.min(i + 8, userIds.length)} / ${userIds.length} profiles…`);
+    }
+
+    if (!profiles.length) throw new Error('No members found in this channel.');
+    allMembers = profiles;
+    startDeck(allMembers);
+  } catch(e) {
+    showError(e.message);
+    showScreen('screen-channels');
+  }
+}
+
+function startDeck(members) {
+  deck = shuffle([...members]);
+  deckIndex = 0;
+  scores = { correct: 0, wrong: 0 };
+  missedMembers = [];
+  document.getElementById('fc-channel-name').textContent = currentChannelName;
+  showScreen('screen-flashcard');
+  showCard(0);
+}
+
+function showCard(idx) {
+  cardFlipped = false;
+  document.getElementById('card-inner').classList.remove('flipped');
+  document.getElementById('btn-correct').disabled = true;
+  document.getElementById('btn-wrong').disabled = true;
+  document.getElementById('flip-nudge').style.opacity = '1';
+
+  const m = deck[idx];
+  const total = deck.length;
+
+  document.getElementById('fc-counter').textContent = `${idx + 1} / ${total}`;
+  document.getElementById('progress-fill').style.width = `${(idx / total) * 100}%`;
+
+  // Front photo
+  const fp = document.getElementById('front-photo');
+  fp.innerHTML = m.image
+    ? `<img src="${m.image}" alt="${escHtml(m.name)}" onerror="this.parentElement.innerHTML='${getInitials(m.name)}'">`
+    : getInitials(m.name);
+
+  // Back
+  const bp = document.getElementById('back-photo');
+  bp.innerHTML = m.image
+    ? `<img src="${m.image}" alt="${escHtml(m.name)}" onerror="this.parentElement.innerHTML='${getInitials(m.name)}'">`
+    : getInitials(m.name);
+  document.getElementById('back-name').textContent = m.name;
+  document.getElementById('back-title').textContent = m.title;
+  document.getElementById('back-dept').textContent = m.dept;
+}
+
+function flipCard() {
+  if (cardFlipped) return;
+  cardFlipped = true;
+  document.getElementById('card-inner').classList.add('flipped');
+  document.getElementById('btn-correct').disabled = false;
+  document.getElementById('btn-wrong').disabled = false;
+  document.getElementById('flip-nudge').style.opacity = '0';
+}
+
+function verdict(correct) {
+  if (!cardFlipped) return;
+  if (correct) { scores.correct++; }
+  else { scores.wrong++; missedMembers.push(deck[deckIndex]); }
+
+  deckIndex++;
+  if (deckIndex >= deck.length) {
+    showResults();
+  } else {
+    showCard(deckIndex);
+  }
+}
+
+function retryMissed() {
+  if (!missedMembers.length) return;
+  startDeck(missedMembers);
+}
+
+function restartSameChannel() {
+  startDeck(allMembers);
+}
+
+/* ══════════════════════════════════════
+   RESULTS
+   ══════════════════════════════════════ */
+function showResults() {
+  const total = scores.correct + scores.wrong;
+  const pct = total ? Math.round((scores.correct / total) * 100) : 0;
+
+  // Heading based on score
+  const heading = pct >= 90 ? 'Excellent! 🎉' : pct >= 70 ? 'Nice work!' : pct >= 50 ? 'Getting there!' : 'Keep practising';
+  document.getElementById('results-heading').textContent = heading;
+  document.getElementById('results-subhead').textContent = `#${currentChannelName} · ${total} cards`;
+
+  document.getElementById('res-correct').textContent = scores.correct;
+  document.getElementById('res-wrong').textContent = scores.wrong;
+  document.getElementById('res-total').textContent = total;
+
+  // Ring
+  const circ = 2 * Math.PI * 56;
+  const fill = (pct / 100) * circ;
+  const arcColor = pct >= 70 ? '#4caf7d' : pct >= 40 ? '#e8d5b0' : '#e05c5c';
+  const arc = document.getElementById('score-arc');
+  arc.setAttribute('stroke', arcColor);
+  // Trigger animation on next frame
+  requestAnimationFrame(() => {
+    arc.setAttribute('stroke-dasharray', `${fill} ${circ}`);
+  });
+  document.getElementById('score-pct-text').textContent = pct + '%';
+
+  const retryBtn = document.getElementById('btn-retry-wrong');
+  retryBtn.style.display = missedMembers.length > 0 ? 'block' : 'none';
+
+  showScreen('screen-results');
+}
+
+/* ══════════════════════════════════════
+   UTILITIES
+   ══════════════════════════════════════ */
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function setLoadingText(t) {
+  document.getElementById('loading-text').textContent = t;
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 5000);
+}
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function getInitials(name) {
+  return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+</script>
+</body>
+</html>
